@@ -20591,7 +20591,7 @@ wrap = function(vars) {
   var firstChar;
   if (vars.text.phrases.length) {
     vars.text.current = vars.text.phrases.shift() + "";
-    vars.text.words = vars.text.current.match(vars.text.split(''));
+    vars.text.words = vars.text.current.split('');
     firstChar = vars.text.current.charAt(0);
     if (firstChar !== vars.text.words[0].charAt(0)) {
       vars.text.words[0] = firstChar + vars.text.words[0];
