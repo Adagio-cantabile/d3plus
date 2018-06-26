@@ -1,4 +1,4 @@
-(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -15,68 +15,102 @@ for (var i = 0, len = code.length; i < len; ++i) {
   revLookup[code.charCodeAt(i)] = i
 }
 
+// Support decoding URL-safe base64 strings, as Node.js does.
+// See: https://en.wikipedia.org/wiki/Base64#URL_applications
 revLookup['-'.charCodeAt(0)] = 62
 revLookup['_'.charCodeAt(0)] = 63
 
-function placeHoldersCount (b64) {
+function getLens (b64) {
   var len = b64.length
+
   if (len % 4 > 0) {
     throw new Error('Invalid string. Length must be a multiple of 4')
   }
 
-  // the number of equal signs (place holders)
-  // if there are two placeholders, than the two characters before it
-  // represent one byte
-  // if there is only one, then the three characters before it represent 2 bytes
-  // this is just a cheap hack to not do indexOf twice
-  return b64[len - 2] === '=' ? 2 : b64[len - 1] === '=' ? 1 : 0
+  // Trim off extra bytes after placeholder bytes are found
+  // See: https://github.com/beatgammit/base64-js/issues/42
+  var validLen = b64.indexOf('=')
+  if (validLen === -1) validLen = len
+
+  var placeHoldersLen = validLen === len
+    ? 0
+    : 4 - (validLen % 4)
+
+  return [validLen, placeHoldersLen]
 }
 
+// base64 is 4/3 + up to two characters of the original data
 function byteLength (b64) {
-  // base64 is 4/3 + up to two characters of the original data
-  return (b64.length * 3 / 4) - placeHoldersCount(b64)
+  var lens = getLens(b64)
+  var validLen = lens[0]
+  var placeHoldersLen = lens[1]
+  return ((validLen + placeHoldersLen) * 3 / 4) - placeHoldersLen
+}
+
+function _byteLength (b64, validLen, placeHoldersLen) {
+  return ((validLen + placeHoldersLen) * 3 / 4) - placeHoldersLen
 }
 
 function toByteArray (b64) {
-  var i, l, tmp, placeHolders, arr
-  var len = b64.length
-  placeHolders = placeHoldersCount(b64)
+  var tmp
+  var lens = getLens(b64)
+  var validLen = lens[0]
+  var placeHoldersLen = lens[1]
 
-  arr = new Arr((len * 3 / 4) - placeHolders)
+  var arr = new Arr(_byteLength(b64, validLen, placeHoldersLen))
+
+  var curByte = 0
 
   // if there are placeholders, only get up to the last complete 4 chars
-  l = placeHolders > 0 ? len - 4 : len
+  var len = placeHoldersLen > 0
+    ? validLen - 4
+    : validLen
 
-  var L = 0
-
-  for (i = 0; i < l; i += 4) {
-    tmp = (revLookup[b64.charCodeAt(i)] << 18) | (revLookup[b64.charCodeAt(i + 1)] << 12) | (revLookup[b64.charCodeAt(i + 2)] << 6) | revLookup[b64.charCodeAt(i + 3)]
-    arr[L++] = (tmp >> 16) & 0xFF
-    arr[L++] = (tmp >> 8) & 0xFF
-    arr[L++] = tmp & 0xFF
+  for (var i = 0; i < len; i += 4) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] << 18) |
+      (revLookup[b64.charCodeAt(i + 1)] << 12) |
+      (revLookup[b64.charCodeAt(i + 2)] << 6) |
+      revLookup[b64.charCodeAt(i + 3)]
+    arr[curByte++] = (tmp >> 16) & 0xFF
+    arr[curByte++] = (tmp >> 8) & 0xFF
+    arr[curByte++] = tmp & 0xFF
   }
 
-  if (placeHolders === 2) {
-    tmp = (revLookup[b64.charCodeAt(i)] << 2) | (revLookup[b64.charCodeAt(i + 1)] >> 4)
-    arr[L++] = tmp & 0xFF
-  } else if (placeHolders === 1) {
-    tmp = (revLookup[b64.charCodeAt(i)] << 10) | (revLookup[b64.charCodeAt(i + 1)] << 4) | (revLookup[b64.charCodeAt(i + 2)] >> 2)
-    arr[L++] = (tmp >> 8) & 0xFF
-    arr[L++] = tmp & 0xFF
+  if (placeHoldersLen === 2) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] << 2) |
+      (revLookup[b64.charCodeAt(i + 1)] >> 4)
+    arr[curByte++] = tmp & 0xFF
+  }
+
+  if (placeHoldersLen === 1) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] << 10) |
+      (revLookup[b64.charCodeAt(i + 1)] << 4) |
+      (revLookup[b64.charCodeAt(i + 2)] >> 2)
+    arr[curByte++] = (tmp >> 8) & 0xFF
+    arr[curByte++] = tmp & 0xFF
   }
 
   return arr
 }
 
 function tripletToBase64 (num) {
-  return lookup[num >> 18 & 0x3F] + lookup[num >> 12 & 0x3F] + lookup[num >> 6 & 0x3F] + lookup[num & 0x3F]
+  return lookup[num >> 18 & 0x3F] +
+    lookup[num >> 12 & 0x3F] +
+    lookup[num >> 6 & 0x3F] +
+    lookup[num & 0x3F]
 }
 
 function encodeChunk (uint8, start, end) {
   var tmp
   var output = []
   for (var i = start; i < end; i += 3) {
-    tmp = (uint8[i] << 16) + (uint8[i + 1] << 8) + (uint8[i + 2])
+    tmp =
+      ((uint8[i] << 16) & 0xFF0000) +
+      ((uint8[i + 1] << 8) & 0xFF00) +
+      (uint8[i + 2] & 0xFF)
     output.push(tripletToBase64(tmp))
   }
   return output.join('')
@@ -86,30 +120,33 @@ function fromByteArray (uint8) {
   var tmp
   var len = uint8.length
   var extraBytes = len % 3 // if we have 1 byte left, pad 2 bytes
-  var output = ''
   var parts = []
   var maxChunkLength = 16383 // must be multiple of 3
 
   // go through the array every three bytes, we'll deal with trailing stuff later
   for (var i = 0, len2 = len - extraBytes; i < len2; i += maxChunkLength) {
-    parts.push(encodeChunk(uint8, i, (i + maxChunkLength) > len2 ? len2 : (i + maxChunkLength)))
+    parts.push(encodeChunk(
+      uint8, i, (i + maxChunkLength) > len2 ? len2 : (i + maxChunkLength)
+    ))
   }
 
   // pad the end with zeros, but make sure to not forget the extra bytes
   if (extraBytes === 1) {
     tmp = uint8[len - 1]
-    output += lookup[tmp >> 2]
-    output += lookup[(tmp << 4) & 0x3F]
-    output += '=='
+    parts.push(
+      lookup[tmp >> 2] +
+      lookup[(tmp << 4) & 0x3F] +
+      '=='
+    )
   } else if (extraBytes === 2) {
-    tmp = (uint8[len - 2] << 8) + (uint8[len - 1])
-    output += lookup[tmp >> 10]
-    output += lookup[(tmp >> 4) & 0x3F]
-    output += lookup[(tmp << 2) & 0x3F]
-    output += '='
+    tmp = (uint8[len - 2] << 8) + uint8[len - 1]
+    parts.push(
+      lookup[tmp >> 10] +
+      lookup[(tmp >> 4) & 0x3F] +
+      lookup[(tmp << 2) & 0x3F] +
+      '='
+    )
   }
-
-  parts.push(output)
 
   return parts.join('')
 }
@@ -2113,14 +2150,7 @@ function isnan (val) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":1,"ieee754":11,"isarray":4}],4:[function(require,module,exports){
-var toString = {}.toString;
-
-module.exports = Array.isArray || function (arr) {
-  return toString.call(arr) == '[object Array]';
-};
-
-},{}],5:[function(require,module,exports){
+},{"base64-js":1,"ieee754":10,"isarray":15}],4:[function(require,module,exports){
 "use strict"
 
 var createThunk = require("./lib/thunk.js")
@@ -2231,7 +2261,7 @@ function compileCwise(user_args) {
 
 module.exports = compileCwise
 
-},{"./lib/thunk.js":7}],6:[function(require,module,exports){
+},{"./lib/thunk.js":6}],5:[function(require,module,exports){
 "use strict"
 
 var uniq = require("uniq")
@@ -2591,7 +2621,7 @@ function generateCWiseOp(proc, typesig) {
 }
 module.exports = generateCWiseOp
 
-},{"uniq":27}],7:[function(require,module,exports){
+},{"uniq":27}],6:[function(require,module,exports){
 "use strict"
 
 // The function below is called when constructing a cwise function object, and does the following:
@@ -2679,7 +2709,7 @@ function createThunk(proc) {
 
 module.exports = createThunk
 
-},{"./compile.js":6}],8:[function(require,module,exports){
+},{"./compile.js":5}],7:[function(require,module,exports){
 "use strict"
 
 function dupe_array(count, value, i) {
@@ -2729,10 +2759,10 @@ function dupe(count, value) {
 }
 
 module.exports = dupe
-},{}],9:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 module.exports = require('./lib/heap');
 
-},{"./lib/heap":10}],10:[function(require,module,exports){
+},{"./lib/heap":9}],9:[function(require,module,exports){
 // Generated by CoffeeScript 1.8.0
 (function() {
   var Heap, defaultCmp, floor, heapify, heappop, heappush, heappushpop, heapreplace, insort, min, nlargest, nsmallest, updateItem, _siftdown, _siftup;
@@ -3109,10 +3139,10 @@ module.exports = require('./lib/heap');
 
 }).call(this);
 
-},{}],11:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
-  var eLen = nBytes * 8 - mLen - 1
+  var eLen = (nBytes * 8) - mLen - 1
   var eMax = (1 << eLen) - 1
   var eBias = eMax >> 1
   var nBits = -7
@@ -3125,12 +3155,12 @@ exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   e = s & ((1 << (-nBits)) - 1)
   s >>= (-nBits)
   nBits += eLen
-  for (; nBits > 0; e = e * 256 + buffer[offset + i], i += d, nBits -= 8) {}
+  for (; nBits > 0; e = (e * 256) + buffer[offset + i], i += d, nBits -= 8) {}
 
   m = e & ((1 << (-nBits)) - 1)
   e >>= (-nBits)
   nBits += mLen
-  for (; nBits > 0; m = m * 256 + buffer[offset + i], i += d, nBits -= 8) {}
+  for (; nBits > 0; m = (m * 256) + buffer[offset + i], i += d, nBits -= 8) {}
 
   if (e === 0) {
     e = 1 - eBias
@@ -3145,7 +3175,7 @@ exports.read = function (buffer, offset, isLE, mLen, nBytes) {
 
 exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   var e, m, c
-  var eLen = nBytes * 8 - mLen - 1
+  var eLen = (nBytes * 8) - mLen - 1
   var eMax = (1 << eLen) - 1
   var eBias = eMax >> 1
   var rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0)
@@ -3178,7 +3208,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
       m = 0
       e = eMax
     } else if (e + eBias >= 1) {
-      m = (value * c - 1) * Math.pow(2, mLen)
+      m = ((value * c) - 1) * Math.pow(2, mLen)
       e = e + eBias
     } else {
       m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen)
@@ -3195,7 +3225,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],12:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict"
 
 var bits = require("bit-twiddle")
@@ -3367,9 +3397,9 @@ function hiInorder(n, x) {
 }
 exports.hi = hiInorder
 
-},{"bit-twiddle":13}],13:[function(require,module,exports){
+},{"bit-twiddle":12}],12:[function(require,module,exports){
 arguments[4][2][0].apply(exports,arguments)
-},{"dup":2}],14:[function(require,module,exports){
+},{"dup":2}],13:[function(require,module,exports){
 "use strict"
 
 function iota(n) {
@@ -3381,11 +3411,11 @@ function iota(n) {
 }
 
 module.exports = iota
-},{}],15:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
- * @author   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
+ * @author   Feross Aboukhadijeh <https://feross.org>
  * @license  MIT
  */
 
@@ -3403,6 +3433,13 @@ function isBuffer (obj) {
 function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
+
+},{}],15:[function(require,module,exports){
+var toString = {}.toString;
+
+module.exports = Array.isArray || function (arr) {
+  return toString.call(arr) == '[object Array]';
+};
 
 },{}],16:[function(require,module,exports){
 "use strict"
@@ -3867,7 +3904,7 @@ exports.equals = compile({
 
 
 
-},{"cwise-compiler":5}],17:[function(require,module,exports){
+},{"cwise-compiler":4}],17:[function(require,module,exports){
 "use strict"
 
 var ndarray = require("ndarray")
@@ -3893,7 +3930,7 @@ module.exports = function convert(arr, result) {
 },{"./doConvert.js":18,"ndarray":21}],18:[function(require,module,exports){
 module.exports=require('cwise-compiler')({"args":["array","scalar","index"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{\nvar _inline_1_v=_inline_1_arg1_,_inline_1_i\nfor(_inline_1_i=0;_inline_1_i<_inline_1_arg2_.length-1;++_inline_1_i) {\n_inline_1_v=_inline_1_v[_inline_1_arg2_[_inline_1_i]]\n}\n_inline_1_arg0_=_inline_1_v[_inline_1_arg2_[_inline_1_arg2_.length-1]]\n}","args":[{"name":"_inline_1_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_1_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_1_arg2_","lvalue":false,"rvalue":true,"count":4}],"thisVars":[],"localVars":["_inline_1_i","_inline_1_v"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"funcName":"convert","blockSize":64})
 
-},{"cwise-compiler":5}],19:[function(require,module,exports){
+},{"cwise-compiler":4}],19:[function(require,module,exports){
 "use strict"
 
 var ndarray = require("ndarray")
@@ -4582,7 +4619,7 @@ function wrappedNDArrayCtor(data, shape, stride, offset) {
 
 module.exports = wrappedNDArrayCtor
 
-},{"iota-array":14,"is-buffer":15}],22:[function(require,module,exports){
+},{"iota-array":13,"is-buffer":14}],22:[function(require,module,exports){
 (function (global){
 "use strict";
 
@@ -9012,7 +9049,7 @@ numeric.svd= function svd(A) {
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 },{}],23:[function(require,module,exports){
 /*
- (c) 2013, Vladimir Agafonkin
+ (c) 2017, Vladimir Agafonkin
  Simplify.js, a high-performance JS polyline simplification library
  mourner.github.io/simplify-js
 */
@@ -9081,51 +9118,41 @@ function simplifyRadialDist(points, sqTolerance) {
     return newPoints;
 }
 
-// simplification using optimized Douglas-Peucker algorithm with recursion elimination
+function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+    var maxSqDist = sqTolerance,
+        index;
+
+    for (var i = first + 1; i < last; i++) {
+        var sqDist = getSqSegDist(points[i], points[first], points[last]);
+
+        if (sqDist > maxSqDist) {
+            index = i;
+            maxSqDist = sqDist;
+        }
+    }
+
+    if (maxSqDist > sqTolerance) {
+        if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+        simplified.push(points[index]);
+        if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+    }
+}
+
+// simplification using Ramer-Douglas-Peucker algorithm
 function simplifyDouglasPeucker(points, sqTolerance) {
+    var last = points.length - 1;
 
-    var len = points.length,
-        MarkerArray = typeof Uint8Array !== 'undefined' ? Uint8Array : Array,
-        markers = new MarkerArray(len),
-        first = 0,
-        last = len - 1,
-        stack = [],
-        newPoints = [],
-        i, maxSqDist, sqDist, index;
+    var simplified = [points[0]];
+    simplifyDPStep(points, 0, last, sqTolerance, simplified);
+    simplified.push(points[last]);
 
-    markers[first] = markers[last] = 1;
-
-    while (last) {
-
-        maxSqDist = 0;
-
-        for (i = first + 1; i < last; i++) {
-            sqDist = getSqSegDist(points[i], points[first], points[last]);
-
-            if (sqDist > maxSqDist) {
-                index = i;
-                maxSqDist = sqDist;
-            }
-        }
-
-        if (maxSqDist > sqTolerance) {
-            markers[index] = 1;
-            stack.push(first, index, index, last);
-        }
-
-        last = stack.pop();
-        first = stack.pop();
-    }
-
-    for (i = 0; i < len; i++) {
-        if (markers[i]) newPoints.push(points[i]);
-    }
-
-    return newPoints;
+    return simplified;
 }
 
 // both algorithms combined for awesome performance
 function simplify(points, tolerance, highestQuality) {
+
+    if (points.length <= 2) return points;
 
     var sqTolerance = tolerance !== undefined ? tolerance * tolerance : 1;
 
@@ -9137,8 +9164,10 @@ function simplify(points, tolerance, highestQuality) {
 
 // export as AMD module / Node module / browser or worker variable
 if (typeof define === 'function' && define.amd) define(function() { return simplify; });
-else if (typeof module !== 'undefined') module.exports = simplify;
-else if (typeof self !== 'undefined') self.simplify = simplify;
+else if (typeof module !== 'undefined') {
+    module.exports = simplify;
+    module.exports.default = simplify;
+} else if (typeof self !== 'undefined') self.simplify = simplify;
 else window.simplify = simplify;
 
 })();
@@ -9637,6 +9666,33 @@ proto.dispose = function kdtDispose() {
   this.length = 0
 }
 
+function Queue() {
+  this.data = []
+  this.offset = 0
+}
+
+Queue.prototype.size = function() {
+  return this.data.length - this.offset
+}
+
+Queue.prototype.push = function(item) {
+  return this.data.push(item)
+}
+
+Queue.prototype.pop = function() {
+  if (this.size() === 0) {
+    return undefined
+  }
+
+  var ret = this.data[this.offset]
+  this.offset++
+  if (this.data.length > 1024 && this.offset * 2 > this.data.length) {
+    this.data = this.data.slice(this.offset)
+    this.offset = 0
+  }
+  return ret
+}
+
 function createKDTree(points) {
   var n, d, indexed
   if(Array.isArray(points)) {
@@ -9668,7 +9724,7 @@ function createKDTree(points) {
     } else {
       type = "float64"
     }
-    indexed = ndarray(pool.malloc(n*(d+1)), [n, d+1])
+    indexed = ndarray(pool.malloc(n*(d+1), type), [n, d+1])
     ops.assign(indexed.hi(n,d), points)
   }
   for(var i=0; i<n; ++i) {
@@ -9685,9 +9741,10 @@ function createKDTree(points) {
   var sel_cmp = ndselect.compile(indexed.order, true, indexed.dtype)
 
   //Walk tree in level order
-  var toVisit = [indexed]
+  var toVisit = new Queue()
+  toVisit.push(indexed)
   while(pointer < n) {
-    var head = toVisit.shift()
+    var head = toVisit.pop()
     var array = head
     var nn = array.shape[0]|0
     
@@ -9756,7 +9813,8 @@ function deserializeKDTree(data) {
     return new KDTree(null, null, 0, data.d)
   }
 }
-},{"./lib/heap.js":25,"bit-twiddle":2,"inorder-tree-layout":12,"ndarray":21,"ndarray-ops":16,"ndarray-pack":17,"ndarray-scratch":19,"ndarray-select":20,"typedarray-pool":26}],25:[function(require,module,exports){
+
+},{"./lib/heap.js":25,"bit-twiddle":2,"inorder-tree-layout":11,"ndarray":21,"ndarray-ops":16,"ndarray-pack":17,"ndarray-scratch":19,"ndarray-select":20,"typedarray-pool":26}],25:[function(require,module,exports){
 "use strict"
 
 module.exports = KDTHeap
@@ -10082,7 +10140,7 @@ exports.clearCache = function clearCache() {
   }
 }
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"bit-twiddle":2,"buffer":3,"dup":8}],27:[function(require,module,exports){
+},{"bit-twiddle":2,"buffer":3,"dup":7}],27:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -19724,7 +19782,7 @@ module.exports = function(edges, source, options) {
 };
 
 
-},{"./normalize.coffee":164,"heap":9}],166:[function(require,module,exports){
+},{"./normalize.coffee":164,"heap":8}],166:[function(require,module,exports){
 var distance;
 
 distance = require("./distance.coffee");
@@ -20411,7 +20469,7 @@ module.exports = function(vars) {
         joiner = "";
         i = 2;
         while (next_char === " ") {
-          joiner += " ";
+          joiner += "";
           next_char = vars.text.current.charAt(vars.text.current.length - progress.length - i);
           i++;
         }
@@ -20426,7 +20484,7 @@ module.exports = function(vars) {
         joiner = "";
         i = 1;
         while (next_char === " ") {
-          joiner += " ";
+          joiner += "";
           next_char = vars.text.current.charAt(progress.length + i);
           i++;
         }
@@ -20453,7 +20511,7 @@ module.exports = function(vars) {
   line = null;
   lines = null;
   wrap = function() {
-    var i, j, len, next_char, unsafe, word;
+    var j, len, word;
     vars.container.value.text("").html("");
     words = vars.text.words.slice();
     if (reverse) {
@@ -20469,19 +20527,6 @@ module.exports = function(vars) {
         break;
       }
       placeWord(word);
-      unsafe = true;
-      while (unsafe) {
-        next_char = vars.text.current.charAt(progress.length);
-        i = 1;
-        while (next_char === " ") {
-          next_char = vars.text.current.charAt(progress.length + i);
-          i++;
-        }
-        unsafe = vars.text.split.value.indexOf(next_char) >= 0;
-        if (unsafe) {
-          placeWord(next_char);
-        }
-      }
     }
     if (line * dy > height) {
       truncate();
@@ -20546,7 +20591,7 @@ wrap = function(vars) {
   var firstChar;
   if (vars.text.phrases.length) {
     vars.text.current = vars.text.phrases.shift() + "";
-    vars.text.words = vars.text.current.match(vars.text.split["break"]);
+    vars.text.words = vars.text.current.match(vars.text.split(''));
     firstChar = vars.text.current.charAt(0);
     if (firstChar !== vars.text.words[0].charAt(0)) {
       vars.text.words[0] = firstChar + vars.text.words[0];
@@ -28964,8 +29009,8 @@ module.exports = function(vars) {
           var pct = (total/overall_total)*100,
               ot = vars.format.value(overall_total, {"key": vars.size.value, "vars": vars});
 
-          pct = " ("+vars.format.value(pct,{"key": "share", "vars": vars})+" of "+ot+")";
-
+              pct = " ("+vars.format.value(pct,{"key": "share", "vars": vars})+ " " + vars.format.locale.value.dev.of + " " + ot +")";
+              
         }
       }
 

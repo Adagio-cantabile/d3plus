@@ -100,7 +100,7 @@ module.exports = (vars) ->
         joiner = ""
         i = 2
         while next_char is " "
-          joiner += " "
+          joiner += ""
           next_char = vars.text.current.charAt(vars.text.current.length - progress.length - i)
           i++
       else
@@ -113,7 +113,7 @@ module.exports = (vars) ->
         joiner = ""
         i = 1
         while next_char is " "
-          joiner += " "
+          joiner += ""
           next_char = vars.text.current.charAt(progress.length + i)
           i++
       else
@@ -147,16 +147,6 @@ module.exports = (vars) ->
         break
 
       placeWord word
-
-      unsafe = true
-      while unsafe
-        next_char = vars.text.current.charAt(progress.length)
-        i = 1
-        while next_char is " "
-          next_char = vars.text.current.charAt(progress.length + i)
-          i++
-        unsafe = vars.text.split.value.indexOf(next_char) >= 0
-        placeWord next_char if unsafe
 
     if line * dy > height
       truncate()
